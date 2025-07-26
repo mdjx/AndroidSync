@@ -21,7 +21,7 @@ class Program
             new Panel("[bold underline white]AndroidSync[/]")
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(Color.White))
-                .Padding(10,1)
+                .Padding(10, 1)
         );
 
         var deviceChoices = devices.Select((dev, i) => $"{i + 1}. [bold]{dev.FriendlyName}[/] - {dev.Description} ([blue]{dev.Manufacturer.Trim().ToUpperInvariant()}[/])").ToArray();
@@ -125,5 +125,7 @@ class Program
 
         selectedDevice.Disconnect();
         AnsiConsole.MarkupLine("[bold green]Sync complete![/]");
+        AnsiConsole.MarkupLine("[yellow]Press Enter to exit[/]");
+        Console.ReadLine();
     }
 }
