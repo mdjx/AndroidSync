@@ -8,14 +8,6 @@ class Program
 {
     static void Main()
     {
-        var devices = MediaDevice.GetDevices()
-            .Where(d => d.DeviceId.Contains("android", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (devices.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[red]No Android devices found. Please connect a phone and try again.[/]");
-            return;
-        }
 
         AnsiConsole.Write(
             new Panel("[bold underline white]AndroidSync[/]")
@@ -23,6 +15,17 @@ class Program
                 .BorderStyle(new Style(Color.White))
                 .Padding(10, 1)
         );
+
+        var devices = MediaDevice.GetDevices()
+            .Where(d => d.DeviceId.Contains("android", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (devices.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[red]No Android devices found. Please connect a phone and try again.[/]");
+            AnsiConsole.MarkupLine("[yellow]Press Enter to exit[/]");
+            Console.ReadLine();
+            return;
+        }
 
         var deviceChoices = devices.Select((dev, i) => $"{i + 1}. [bold]{dev.FriendlyName}[/] - {dev.Description} ([blue]{dev.Manufacturer.Trim().ToUpperInvariant()}[/])").ToArray();
         var selectedString = AnsiConsole.Prompt(
