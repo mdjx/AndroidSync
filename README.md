@@ -2,6 +2,8 @@
 
 A simple Windows console app for syncing files from Android devices over USB.
 
+![Screenshot](docs/screenshot.png)
+
 ## What it does
 
 Connects to your Android phone and copies files from these folders to your PC:
@@ -28,24 +30,6 @@ Connects to your Android phone and copies files from these folders to your PC:
 
 The app saves your sync location for each device to ~/Documents/AndroidSyncConfig.json, so next time you can just hit Enter to use the same folder.
 
-## Building
-
-```bash
-git clone https://github.com/yourusername/AndroidSync.git
-cd AndroidSync
-dotnet build
-```
-
-Or build a single-file executable:
-
-```bash
-dotnet publish --configuration Release
-```
-
-## Dependencies
-
-- [MediaDevices](https://github.com/Bassman2/MediaDevices) - For MTP communication
-- [Spectre.Console](https://github.com/spectreconsole/spectre.console) - For the UI
 
 ## License
 
