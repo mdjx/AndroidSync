@@ -83,7 +83,7 @@ class Program
         selectedDevice.Connect();
 
         string[] syncRoots = { "DCIM", "Pictures", "Documents", "Download", "Movies", "Recordings" };
-        var TopFolderDirectories = new List<string>();
+        var TopFolderDirectories = new List<(MediaDirectoryInfo Dir, string RelativePath)>();
         foreach (string root in syncRoots)
         {
             string rootPath = $@"\Internal storage\{root}";
@@ -92,40 +92,51 @@ class Program
                 AnsiConsole.MarkupLine($"[grey]Not found on device, skipping:[/] {root}");
                 continue;
             }
-            CollectFolders(selectedDevice, rootPath, TopFolderDirectories);
+            CollectFolders(selectedDevice.GetDirectoryInfo(rootPath), root, TopFolderDirectories);
         }
 
         // AnsiConsole.MarkupLine($"[grey]Syncing folders:[/] [bold]{string.Join(", ", TopFolderDirectories)}[/]");
 
+        int failedCount = 0;
         AnsiConsole.Progress()
             .Start(ctx =>
             {
                 var folderTasks = new Dictionary<string, ProgressTask>();
-                foreach (string dir in TopFolderDirectories)
+                foreach (var (dir, relativePath) in TopFolderDirectories)
                 {
-                    var parts = dir.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-                    int idx = Array.IndexOf(parts, "Internal storage");
-                    string relativePath = Path.Combine(parts[(idx + 1)..]);
                     string destFolder = Path.Combine(basePath, relativePath);
                     Directory.CreateDirectory(destFolder);
-                    string[] files = selectedDevice.GetFiles(dir);
+                    string taskName = Markup.Escape($@"Syncing Internal storage\{relativePath}");
+                    // Use MediaFileInfo rather than path strings: the path-based MediaDevices APIs reject
+                    // any phone path containing '|' or control characters, which Android allows in filenames
+                    MediaFileInfo[] files = dir.EnumerateFiles().ToArray();
                     if (files.Length == 0)
                     {
-                        var t = ctx.AddTask($"Syncing {dir.Trim().TrimStart('\\')}", maxValue: 1);
+                        var t = ctx.AddTask(taskName, maxValue: 1);
                         t.Increment(1);
                         continue;
                     }
-                    Directory.CreateDirectory(destFolder);
-                    var task = ctx.AddTask($"Syncing {dir.Trim().TrimStart('\\')}", maxValue: files.Length);
-                    folderTasks[dir] = task;
-                    for (int i = 0; i < files.Length; i++)
+                    var task = ctx.AddTask(taskName, maxValue: files.Length);
+                    folderTasks[relativePath] = task;
+                    foreach (var file in files)
                     {
-                        var file = files[i];
-                        var fileName = file.Split(@"\")[^1];
-                        string newPath = Path.Combine(destFolder, fileName);
+                        string newPath = Path.Combine(destFolder, ToWindowsName(file.Name));
                         if (!File.Exists(newPath))
                         {
-                            selectedDevice.DownloadFile(file, newPath);
+                            try
+                            {
+                                using var source = file.OpenRead();
+                                using var destination = File.Create(newPath);
+                                source.CopyTo(destination);
+                            }
+                            catch (Exception ex)
+                            {
+                                failedCount++;
+                                AnsiConsole.MarkupLine($"[red]Failed to sync: {Markup.Escape($@"Internal storage\{relativePath}\{file.Name}")}[/]");
+                                AnsiConsole.MarkupLine($"[red]{Markup.Escape(ex.ToString())}[/]");
+                                // Remove any partially written file so it's retried on the next sync rather than skipped
+                                try { File.Delete(newPath); } catch { }
+                            }
                         }
                         task.Increment(1);
                     }
@@ -133,20 +144,29 @@ class Program
             });
 
         selectedDevice.Disconnect();
-        AnsiConsole.MarkupLine("[bold green]Sync complete![/]");
+        if (failedCount > 0)
+            AnsiConsole.MarkupLine($"[bold yellow]Sync complete, but {failedCount} file(s) failed - see errors above.[/]");
+        else
+            AnsiConsole.MarkupLine("[bold green]Sync complete![/]");
         AnsiConsole.MarkupLine("[yellow]Press Enter to exit[/]");
         Console.ReadLine();
     }
 
-    // Adds dir and all of its non-hidden subfolders (recursively) to result
-    static void CollectFolders(MediaDevice device, string dir, List<string> result)
+    // Adds dir and all of its non-hidden subfolders (recursively) to result, with their paths relative to Internal storage
+    static void CollectFolders(MediaDirectoryInfo dir, string relativePath, List<(MediaDirectoryInfo, string)> result)
     {
-        result.Add(dir);
-        foreach (string subDir in device.GetDirectories(dir))
+        result.Add((dir, relativePath));
+        foreach (var subDir in dir.EnumerateDirectories())
         {
-            string folderName = subDir.Split(@"\")[^1];
-            if (folderName.StartsWith('.')) { AnsiConsole.MarkupLine($"[yellow]Skipping hidden folder:[/] {folderName}"); continue; }
-            CollectFolders(device, subDir, result);
+            if (subDir.Name.StartsWith('.')) { AnsiConsole.MarkupLine($"[yellow]Skipping hidden folder:[/] {Markup.Escape(subDir.Name)}"); continue; }
+            CollectFolders(subDir, Path.Combine(relativePath, ToWindowsName(subDir.Name)), result);
         }
+    }
+
+    // Android allows characters in names that Windows doesn't (e.g. : ? * | "), so replace them
+    static string ToWindowsName(string name)
+    {
+        foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
+        return name;
     }
 }
