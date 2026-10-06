@@ -1,9 +1,14 @@
 ﻿using MediaDevices;
-using System.Runtime.Versioning;
 using System.Text.Json;
 using Spectre.Console;
 
+#if NET5_0_OR_GREATER
+using System.Runtime.Versioning;
+#endif
+
+#if NET5_0_OR_GREATER
 [SupportedOSPlatform("windows10.0.18362")]
+#endif
 class Program
 {
     static void Main()
@@ -77,15 +82,18 @@ class Program
 
         selectedDevice.Connect();
 
-        string[] Dcim = selectedDevice.GetDirectories(@"\Internal storage\DCIM");
-        string[] Pictures = selectedDevice.GetDirectories(@"\Internal storage\Pictures");
-        string[] Documents = selectedDevice.GetDirectories(@"\Internal storage\Documents");
-        string[] Download = selectedDevice.GetDirectories(@"\Internal storage\Download");
-        string[] Movies = selectedDevice.GetDirectories(@"\Internal storage\Movies");
-        string[] Recordings = selectedDevice.GetDirectories(@"\Internal storage\Recordings");
-
-        string[][] arrays = { Dcim, Pictures, Documents, Download, Movies, Recordings };
-        string[] TopFolderDirectories = arrays.SelectMany(a => a).ToArray();
+        string[] syncRoots = { "DCIM", "Pictures", "Documents", "Download", "Movies", "Recordings" };
+        var TopFolderDirectories = new List<string>();
+        foreach (string root in syncRoots)
+        {
+            string rootPath = $@"\Internal storage\{root}";
+            if (!selectedDevice.DirectoryExists(rootPath))
+            {
+                AnsiConsole.MarkupLine($"[grey]Not found on device, skipping:[/] {root}");
+                continue;
+            }
+            CollectFolders(selectedDevice, rootPath, TopFolderDirectories);
+        }
 
         // AnsiConsole.MarkupLine($"[grey]Syncing folders:[/] [bold]{string.Join(", ", TopFolderDirectories)}[/]");
 
@@ -95,8 +103,6 @@ class Program
                 var folderTasks = new Dictionary<string, ProgressTask>();
                 foreach (string dir in TopFolderDirectories)
                 {
-                    string folderName = dir.Split(@"\")[^1];
-                    if (folderName.StartsWith('.')) { AnsiConsole.MarkupLine($"[yellow]Skipping hidden folder:[/] {folderName}"); continue; }
                     var parts = dir.Split('\\', StringSplitOptions.RemoveEmptyEntries);
                     int idx = Array.IndexOf(parts, "Internal storage");
                     string relativePath = Path.Combine(parts[(idx + 1)..]);
@@ -130,5 +136,17 @@ class Program
         AnsiConsole.MarkupLine("[bold green]Sync complete![/]");
         AnsiConsole.MarkupLine("[yellow]Press Enter to exit[/]");
         Console.ReadLine();
+    }
+
+    // Adds dir and all of its non-hidden subfolders (recursively) to result
+    static void CollectFolders(MediaDevice device, string dir, List<string> result)
+    {
+        result.Add(dir);
+        foreach (string subDir in device.GetDirectories(dir))
+        {
+            string folderName = subDir.Split(@"\")[^1];
+            if (folderName.StartsWith('.')) { AnsiConsole.MarkupLine($"[yellow]Skipping hidden folder:[/] {folderName}"); continue; }
+            CollectFolders(device, subDir, result);
+        }
     }
 }
